@@ -3,7 +3,7 @@
 
 Инструкция:
 1) EXTENSION_PATH = f'C:/Users/User/AppData/Local/Google/Chrome/User Data/Profile 1/Extensions/nkbihfbeogaeaoehlefnkodbefgpgknn/12.6.1_0.crx'
-   Указываем путь к расширению ММ (файл приложил)
+   Указываем путь к расширению ММ (файл приложил - файл 12.6.1_0.crx)
 
 2) Указываем сидки, прокси и номер аккаунта в таком формате (прокси тут не надо, но я тестил, поэтому оставил, можете везде одну поставить)
 wallets = [
