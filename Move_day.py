@@ -33,29 +33,6 @@ wallets = [
 ]
 random.shuffle(wallets)
 
-# Поиск всплывающего окна при коннекте в квест
-def check_and_click_if_exists(driver, current_window):
-    all_windows = driver.window_handles
-    if all_windows[-1] != current_window:
-        try:
-            driver.switch_to.window(all_windows[-1])
-            WebDriverWait(driver, 3).until(
-                EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div/div[3]/button[2]'))
-            ).click()
-            print("Окно Метамаск появилось, подтверждено.")
-            time.sleep(2) 
-        except NoSuchElementException:
-            # Если кнопка не найдена, продолжаем выполнение
-            print("Окна Метамаск не появилось, идем дальше.")
-
-# Запустк драйвера
-def start_browser(proxy_options, options):
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), 
-                                options=options,
-                                seleniumwire_options=proxy_options,
-                                )
-    return driver
-
 # Логин в метамаск
 def login_metamask(driver, seed_phrase):
     driver.get('chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/home.html#onboarding/welcome')
@@ -97,6 +74,14 @@ def login_metamask(driver, seed_phrase):
     EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div[2]/div/div/div/div[2]/button'))
     ).click()
 
+# Запустк драйвера
+def start_browser(proxy_options, options):
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), 
+                                options=options,
+                                seleniumwire_options=proxy_options,
+                                )
+    return driver
+
 # Коннект Метамаск к Galxe
 def galxe_connect(driver):
     current_window = driver.current_window_handle
@@ -126,230 +111,194 @@ def galxe_connect(driver):
     time.sleep(random.randint(5, 10))
     driver.switch_to.window(current_window)
 
-# Квест 5 страниц
-def daily_pages_quest(driver):  
-    driver.get('https://app.galxe.com/quest/Movement/GCZkTtx9hF')
-    print('Открылся квест Daily Move')
-    current_window = driver.current_window_handle
-    time.sleep(random.randint(7, 10))
+# Закрытие модалки
+def close_modal_if_present(driver):
+    """Закрыть модальное окно, если оно есть."""
     try:
-        login = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[2]/div/div[2]/div[2]/div/div/button')
-        galxe_connect(driver)
-    except (TimeoutException, NoSuchWindowException):
-        check_and_click_if_exists(driver, current_window)
+        modal_button = driver.find_element(By.XPATH, '//*[contains(@id, "radix-")]/div[3]/div/button[1]')
+        driver.execute_script("arguments[0].click();", modal_button)
+        print("Модальное окно закрыто.")
+    except NoSuchElementException:
+        pass
+
+# Подтверждение модалки оплаты
+def confirm_pay(driver):
+    """Подтвердить оплату, если появилось окно подтверждения."""
+    try:
+        confirm_button = WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div/div/div[4]/button[1]'))
+        )
+        driver.execute_script("arguments[0].click();", confirm_button)
+        print("Оплата подтверждена.")
+    except (NoSuchElementException, TimeoutException):
+        print("Окна оплаты нет.")
+
+# Переключение на мейн окно
+def switch_to_main_window(driver, current_window):
+    """Закрыть все дополнительные окна и переключиться обратно на главное."""
     all_windows = driver.window_handles
     for window in all_windows:
         if window != current_window:
             driver.switch_to.window(window)
             driver.close()
     driver.switch_to.window(current_window)
-    # Прохождение квеста ==========================================================
-    while True: # Проверяем логин 
+
+# Ожидание логина на Галксе
+def wait_for_login(driver):
+    """Ждать появления элемента логина."""
+    while True:
+        try:
+            login = driver.find_element(By.XPATH, '//*[contains(@id, "radix-")]/a/div')
+            if login:
+                print("Логин найден.")
+                break
+        except NoSuchElementException:
+            print("Ожидание логина...")
+            time.sleep(10)
+
+# Поиск всплывающего окна при коннекте в квест
+def check_and_click_if_exists(driver, current_window):
+    all_windows = driver.window_handles
+    if all_windows[-1] != current_window:
+        try:
+            driver.switch_to.window(all_windows[-1])
+            WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div/div[3]/button[2]'))
+            ).click()
+            print("Окно Метамаск появилось, подтверждено.")
+            time.sleep(2) 
+        except NoSuchElementException:
+            # Если кнопка не найдена, продолжаем выполнение
+            print("Окна Метамаск не появилось, идем дальше.")
+
+# Выполнение квестов Daily поштучно
+def perform_step(driver, current_window, xpath_button, completion_text):
+    """Выполнить шаг квеста."""
+    close_modal_if_present(driver)
+    driver.find_element(By.XPATH, xpath_button).click()
+    time.sleep(2)
+    close_modal_if_present(driver)
+    WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div[2]/div/div[2]/div[3]'))
+    ).click()
+    time.sleep(2)
+    driver.switch_to.window(current_window)
+    close_modal_if_present(driver)
+    WebDriverWait(driver, 15).until(
+        EC.text_to_be_present_in_element((By.TAG_NAME, "body"), completion_text)
+    )
+    print(f"Задание {completion_text} выполнено.")
+
+# Квест Daily Move страниц
+def daily_pages_quest(driver):  
+    driver.get('https://app.galxe.com/quest/Movement/GCZkTtx9hF')
+    print("Страница Daily Move открыта.")
+    current_window = driver.current_window_handle
+    time.sleep(6)
+
+    # Проверка логина и подключение
+    try:
+        login = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[2]/div/div[2]/div[2]/div/div/button')
+        galxe_connect(driver)  # Предполагаемая функция для подключения
+    except (TimeoutException, NoSuchWindowException):
+        pass
+
+    # Проверяем вход в систему
+    while True:
         try:
             login = driver.find_elements(By.XPATH, '//*[contains(@id, "radix-")]/a/div')
             if login:
-                print("Логин есть.")
+                print("Логин найден.")
                 break
         except NoSuchElementException:
-            print("Ждем логин.")
+            print("Ожидание логина...")
             time.sleep(10)
     time.sleep(5)
-    def close_modal_if_present(driver):
-        """Функция для проверки и закрытия модального окна, если оно есть."""
-        try:
-            modal_button = driver.find_element(By.XPATH, '//*[contains(@id, "radix-")]/div[3]/div/button[1]')
-            driver.execute_script("arguments[0].click();", modal_button)
-            print("Модальное окно закрыто.")
-        except NoSuchElementException:
-            # Если модального окна нет, просто продолжаем выполнение
-            pass
-    def confirm_pay(driver):
-        """Функция для проверки подтверждения оплаты."""
-        try:
-            confirm_button = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div/div/div[4]/button[1]'))
-            )
-            driver.execute_script("arguments[0].click();", confirm_button)
-            print("Оплата подтверждена.")
-        except (NoSuchElementException, TimeoutException):
-            print("Окна оплаты нет.")
-            # Если модального окна нет, просто продолжаем выполнение
-            pass
-    # Кнопка 1
-    close_modal_if_present(driver) # Проверяем модалку
-    driver.find_element(by=By.XPATH, value='/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[1]/div[2]/div/div[1]').click()
-    time.sleep(2)
+    
+    # Закрытие модальных окон
     close_modal_if_present(driver)
-    WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div[2]/div/div[2]/div[3]'))
-    ).click()
-    time.sleep(2)
-    driver.switch_to.window(current_window)
+
+    # Выполнение шагов квеста
+    perform_step(driver, current_window, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[1]/div[2]/div/div[1]', "visited the Parthenon Website page")
+    perform_step(driver, current_window, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[2]/div[2]/div/div[1]', "visited the Movement Website page")
+    perform_step(driver, current_window, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[3]/div[2]/div/div[1]', "visited the Movement Ecosystem page")
+    perform_step(driver, current_window, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[4]/div[2]/div/div[1]', "visited the MoveDrop page")
+    perform_step(driver, current_window, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[5]/div[2]/div/div[1]', "visited the Movement Blog page")
+
+    switch_to_main_window(driver, current_window)
+
+    # Прокрутка стрелочки
     close_modal_if_present(driver)
-    WebDriverWait(driver, 15).until(
-    EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "visited the Parthenon Website page")
-    )
-    print('Задание 1 ОК')
-    # Кнопка 2 
-    close_modal_if_present(driver)
-    driver.find_element(by=By.XPATH, value='/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[2]/div[2]/div/div[1]').click()
-    time.sleep(2)
-    close_modal_if_present(driver)
-    WebDriverWait(driver, 15).until(
-        EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div[2]/div/div[2]/div[3]'))
-    ).click()   
-    time.sleep(2)
-    driver.switch_to.window(current_window)
-    close_modal_if_present(driver)
-    WebDriverWait(driver, 15).until(
-    EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "visited the Movement Website page")
-    )
-    print('Задание 2 ОК')
-    # Кнопка 3
-    close_modal_if_present(driver)
-    driver.find_element(by=By.XPATH, value='/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[3]/div[2]/div/div[1]').click()
-    time.sleep(2)
-    close_modal_if_present(driver)
-    WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div[2]/div/div[2]/div[3]'))
-    ).click()
-    time.sleep(2)
-    driver.switch_to.window(current_window)
-    close_modal_if_present(driver)
-    WebDriverWait(driver, 15).until(
-    EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "visited the Movement Ecosystem page")
-    )
-    print('Задание 3 ОК')
-    # Кнопка 4
-    close_modal_if_present(driver)
-    driver.find_element(by=By.XPATH, value='/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[4]/div[2]/div/div[1]').click()
-    time.sleep(2)
-    close_modal_if_present(driver)
-    WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div[2]/div/div[2]/div[3]'))
-    ).click()
-    time.sleep(2)
-    driver.switch_to.window(current_window)
-    close_modal_if_present(driver)
-    WebDriverWait(driver, 15).until(
-    EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "visited the MoveDrop page")
-    )
-    print('Задание 4 ОК')
-    # Кнопка 5
-    close_modal_if_present(driver)
-    driver.find_element(by=By.XPATH, value='/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[5]/div[2]/div/div[1]').click()
-    time.sleep(2)
-    close_modal_if_present(driver)
-    WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div[2]/div/div[2]/div[3]'))
-    ).click()
-    time.sleep(2)
-    driver.switch_to.window(current_window)
-    close_modal_if_present(driver)
-    WebDriverWait(driver, 15).until(
-    EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "visited the Movement Blog page")
-    )
-    print('Задание 5 ОК')
-    # Прокрут стрелочки
-    close_modal_if_present(driver)
-    element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[3]/div[2]/div/div[1]/button/div/span')
-    element.click()
-    time.sleep(4)
-    all_windows = driver.window_handles
-    for window in all_windows:
-        if window != current_window:
-            driver.switch_to.window(window)
-            driver.close()
-    driver.switch_to.window(current_window)
-    # Клейм
-    close_modal_if_present(driver)
-    all_windows = driver.window_handles
-    for window in all_windows:
-        if window != current_window:
-            driver.switch_to.window(window)
-            driver.close()
+    try:
+        element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[3]/div[2]/div/div[1]/button/div/span')
+        element.click()
+        print("Стрелочка прокручена.")
+        time.sleep(4)
+    except NoSuchElementException:
+        print("Элемент стрелочки не найден.")
+    time.sleep(3)
+
+    # Выполнение клейма
     element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[2]/div/div[2]/div[2]/div/div/button')
     driver.execute_script("arguments[0].click();", element)
-    print("Кнопка квеста Daily Move нажата.")
+    print("Кнопка клейма нажата.")
     time.sleep(2)
     confirm_pay(driver)
-    # Проверка, появилось ли окно подтверждения транзакции
+
+    # Проверка появления окна Метамаска
     try:
-        new_window = WebDriverWait(driver, 20).until(
-            lambda d: len(d.window_handles) > len(all_windows)
-        )
-        print("Окно Метамаск появилось.")
+        WebDriverWait(driver, 20).until(lambda d: len(d.window_handles) > 1)
+        print("Окно Метамаска появилось.")
     except TimeoutException:
-        print("Проблемка.")
-        input('Сделай действие для продолжения: Если Метамаск появился - нажми Ентер, если НЕ появился - сделай действие для появления ММ и нажми Ентер')
+        print("Ожидание окна Метамаска.")
+        input("Сделай действие для продолжения: Если Метамаск появился - нажми Ентер, если НЕ появился - сделай действие для появления ММ и нажми Ентер.")
+    
+    # Обработка Метамаска
     all_windows = driver.window_handles
     driver.switch_to.window(all_windows[-1])
-    # Платный клейм
+
+    try:
+        # Проверяем, появилось ли окно добавления сети
+        add_network_button = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div[2]/div/button[2]'))
+        )
+        # Если кнопка есть, добавляем сеть
+        add_network_button.click()
+        print("Сеть добавлена.")
+        time.sleep(3)
+        switch_to_main_window(driver, current_window)
+        
+        WebDriverWait(driver, 20).until(lambda d: len(d.window_handles) > 1)
+        all_windows = driver.window_handles
+        driver.switch_to.window(all_windows[-1])
+        print("Переходим к подтверждению транзакции.")
+        
+    except (TimeoutException, NoSuchWindowException):
+        # Если кнопка добавления сети не появилась, сразу ищем окно для подтверждения транзакции
+        print("Кнопка добавления сети не появилась. Переходим к подтверждению транзакции.")
+
+    # Подтверждение транзакции
     try:
         WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, '//*[@id="app-content"]/div/div/div/div[2]/div/button[2]'))
-        )
-        print('Страница добавления сети')
-    except TimeoutException:
-        print('Кнопка добавления сети не появилась.')
-    buttons = driver.find_elements(By.XPATH, '//*[@id="app-content"]/div/div/div/div[2]/div/button[2]')
-    if buttons:
-        # Выполняем шаги для добавления сети
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div[2]/div/button[2]'))
-        ).click()
-        print('Сеть добавлена')
-        time.sleep(random.randint(4, 6))
-        driver.switch_to.window(current_window)
-        all_windows = driver.window_handles
-        if len(all_windows) >= 1:
-            time.sleep(10)
-        close_modal_if_present(driver)
-        # Повторно клеймим
-        driver.switch_to.window(current_window)
-        all_windows = driver.window_handles
-        element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[2]/div/div[2]/div[2]/div/div/button')
-        driver.execute_script("arguments[0].click();", element)
-        print("Кнопка квеста Daily Move нажата.")
-        time.sleep(2)
-        confirm_pay(driver)
-        driver.switch_to.window(current_window)
-        # Подтверждение транзакции
-        try:
-            new_window = WebDriverWait(driver, 20).until(
-                lambda d: len(d.window_handles) > len(all_windows)
-            )
-            print("Окно Метамаск появилось.")
-        except TimeoutException:
-            print("Проблемка.")
-            input('Сделай действие для продолжения: Если Метамаск появился - нажми Ентер, если НЕ появился - сделай действие для появления ММ и нажми Ентер')
-        all_windows = driver.window_handles
-        driver.switch_to.window(all_windows[-1])
-        WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div/div[3]/button[2]'))
         ).click()
-        print('Транзакция подтверждена')
+        print("Транзакция подтверждена.")
+    finally:
+        # Возвращаемся к основному окну
         driver.switch_to.window(current_window)
-        time.sleep(random.randint(4, 6))
-    else:
-        print('Страница подтверждения транзакции')
-        # Если появляется только окно подтверждения, выполняем только шаги для подтверждения
-        all_windows = driver.window_handles
-        driver.switch_to.window(all_windows[-1])
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div/div[3]/button[2]'))
-        ).click()
-        driver.switch_to.window(current_window)
-        time.sleep(random.randint(4, 6))
-    # Проверка клейма
-    print('Проверка клейма')
+
+    # Проверка выполнения клейма
+    print("Проверка клейма.")
     while True:
-        form_element = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, '//*[contains(@id, "radix-")]/button/span[1]'))
-        )
-        if form_element:
-            print("Клейм квеста Daily Move выполнен.")
-            break
+        try:
+            form_element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, '//*[contains(@id, "radix-")]/button/span[1]'))
+            )
+            if form_element:
+                print("Клейм выполнен.")
+                break
+        except TimeoutException:
+            print("Ожидание завершения клейма...")
     # while True:
     #     try:
     #         element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div/div/div[2]/div/div[2]/div[2]/div/div/button')
@@ -366,168 +315,118 @@ def daily_pages_quest(driver):
 
 # Квест Battle
 def battle_quest(driver):
+    """Основной процесс выполнения квеста Battle."""
     driver.get('https://app.galxe.com/quest/Movement/GCj3gtgLqj')
     current_window = driver.current_window_handle
-    print('Страница Battle открыта')
-    time.sleep(random.randint(7, 10))
+    print("Страница Battle открыта.")
+    time.sleep(6)
+    
+    # Проверка логина и подключение
     try:
         login = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[2]/div/div[2]/div[2]/div/div/button')
-        galxe_connect(driver)
+        galxe_connect(driver)  # Предполагаемая функция для подключения
     except (TimeoutException, NoSuchWindowException):
-        check_and_click_if_exists(driver, current_window)
-    all_windows = driver.window_handles
-    for window in all_windows:
-        if window != current_window:
-            driver.switch_to.window(window)
-            driver.close()
-    driver.switch_to.window(current_window)
-    # Прохождение квеста ==========================================================
-    while True:
-        try:
-            login = driver.find_element(By.XPATH, '//*[contains(@id, "radix-")]/a/div')
-            if login:
-                print("Логин есть.")
-                break
-        except NoSuchElementException:
-            print("Ждем логин.")
-            time.sleep(10)
+        switch_to_main_window(driver, current_window)
+    
+    wait_for_login(driver)
     time.sleep(5)
-    def close_modal_if_present(driver):
-        """Функция для проверки и закрытия модального окна, если оно есть."""
-        try:
-            modal_button = driver.find_element(By.XPATH, '//*[contains(@id, "radix-")]/div[3]/div/button[1]')
-            driver.execute_script("arguments[0].click();", modal_button)
-            print("Модальное окно закрыто.")
-        except NoSuchElementException:
-            # Если модального окна нет, просто продолжаем выполнение
-            pass
-    def confirm_pay(driver):
-        """Функция для проверки подтверждения оплаты."""
-        try:
-            confirm_button = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div/div/div[4]/button[1]'))
-            )
-            driver.execute_script("arguments[0].click();", confirm_button)
-            print("Оплата подтверждена.")
-        except (NoSuchElementException, TimeoutException):
-            print("Окна оплаты нет.")
-            # Если модального окна нет, просто продолжаем выполнение
-            pass
-    close_modal_if_present(driver) # Проверяем модалку
+
+    # Закрытие модальных окон
+    close_modal_if_present(driver)
+
+    # Основные шаги квеста
     WebDriverWait(driver, 8).until(
         EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[1]/div[2]/div/div[1]'))
     ).click()
     time.sleep(2)
     close_modal_if_present(driver)
+
     WebDriverWait(driver, 10).until(
         EC.element_to_be_clickable((By.XPATH, '//*[contains(@id, "radix-")]/div[2]/div/div[2]/div[3]'))
-    ).click()   
+    ).click()
     time.sleep(2)
-    driver.switch_to.window(current_window)
+    
+    switch_to_main_window(driver, current_window)
     close_modal_if_present(driver)
+    
+    # Проверка выполнения задания
     WebDriverWait(driver, 20).until(
-    EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "visited the Battle of Olympus page")
+        EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "visited the Battle of Olympus page")
     )
-    print('Задание ОК')
-    all_windows = driver.window_handles
-    for window in all_windows:
-        if window != current_window:
-            driver.switch_to.window(window)
-            driver.close()
-    driver.switch_to.window(current_window)
-    # Прокрут стрелочки
+    print("Задание выполнено.")
+
+    # Прокрутка стрелочки
     close_modal_if_present(driver)
-    element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[1]/div[2]/div/div[1]/button/div/span')
-    element.click()
-    time.sleep(4)
-    # Клейм
-    close_modal_if_present(driver)
-    all_windows = driver.window_handles
-    for window in all_windows:
-        if window != current_window:
-            driver.switch_to.window(window)
-            driver.close()
+    try:
+        element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[1]/div/div[3]/div[1]/div[2]/div/div[1]/button/div/span')
+        element.click()
+        print("Стрелочка прокручена.")
+        time.sleep(4)
+    except NoSuchElementException:
+        print("Элемент стрелочки не найден.")
+    time.sleep(3)
+
+    # Выполнение клейма
     element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[2]/div/div[2]/div[2]/div/div/button')
     driver.execute_script("arguments[0].click();", element)
-    print("Кнопка квеста Battle нажата.")
+    print("Кнопка клейма нажата.")
     time.sleep(2)
     confirm_pay(driver)
-    # Проверка, появилось ли окно подтверждения транзакции
-    all_windows = driver.window_handles
+
+    # Проверка появления окна Метамаска
     try:
-        new_window = WebDriverWait(driver, 20).until(
-            lambda d: len(d.window_handles) > len(all_windows)
-        )
-        print("Окно Метамаск появилось.")
+        WebDriverWait(driver, 20).until(lambda d: len(d.window_handles) > 1)
+        print("Окно Метамаска появилось.")
     except TimeoutException:
-        print("Проблемка.")
-        input('Сделай действие для продолжения: Если Метамаск появился - нажми Ентер, если НЕ появился - сделай действие для появления ММ и нажми Ентер')
+        print("Ожидание окна Метамаска.")
+        input("Сделай действие для продолжения: Если Метамаск появился - нажми Ентер, если НЕ появился - сделай действие для появления ММ и нажми Ентер.")
+    
+    # Обработка Метамаска
     all_windows = driver.window_handles
     driver.switch_to.window(all_windows[-1])
-    # Платный клейм
+
+    try:
+        # Проверяем, появилось ли окно добавления сети
+        add_network_button = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div[2]/div/button[2]'))
+        )
+        # Если кнопка есть, добавляем сеть
+        add_network_button.click()
+        print("Сеть добавлена.")
+        time.sleep(3)
+        switch_to_main_window(driver, current_window)
+        
+        WebDriverWait(driver, 20).until(lambda d: len(d.window_handles) > 1)
+        all_windows = driver.window_handles
+        driver.switch_to.window(all_windows[-1])
+        print("Переходим к подтверждению транзакции.")
+        
+    except (TimeoutException, NoSuchWindowException):
+        # Если кнопка добавления сети не появилась, сразу ищем окно для подтверждения транзакции
+        print("Кнопка добавления сети не появилась. Переходим к подтверждению транзакции.")
+
+    # Подтверждение транзакции
     try:
         WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, '//*[@id="app-content"]/div/div/div/div[2]/div/button[2]'))
-        )
-        print('Страница добавления сети')
-    except TimeoutException:
-        print('Кнопка добавления сети не появилась.')
-    buttons = driver.find_elements(By.XPATH, '//*[@id="app-content"]/div/div/div/div[2]/div/button[2]')
-    if buttons:
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div[2]/div/button[2]'))
-        ).click()
-        print('Сеть добавлена')
-        time.sleep(random.randint(4, 6))
-        driver.switch_to.window(current_window)
-        all_windows = driver.window_handles
-        if len(all_windows) >= 1:
-            time.sleep(10)
-        close_modal_if_present(driver)
-        # Повторно клеймим
-        all_windows = driver.window_handles
-        driver.switch_to.window(current_window)
-        element = driver.find_element(By.XPATH, '/html/body/div[1]/main/div[1]/div/div/div[2]/div/div[2]/div[2]/div/div/button')
-        driver.execute_script("arguments[0].click();", element)
-        print("Кнопка квеста Battle нажата.")
-        time.sleep(2)
-        confirm_pay(driver)
-        driver.switch_to.window(current_window)
-        try:
-            new_window = WebDriverWait(driver, 20).until(
-                lambda d: len(d.window_handles) > len(all_windows)
-            )
-            print("Окно Метамаск появилось.")
-        except TimeoutException:
-            print("Проблемка.")
-            input('Сделай действие для продолжения: Если Метамаск появился - нажми Ентер, если НЕ появился - сделай действие для появления ММ и нажми Ентер')
-        all_windows = driver.window_handles
-        driver.switch_to.window(all_windows[-1])
-        WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div/div[3]/button[2]'))
         ).click()
-        print('Транзакция подтверждена')
+        print("Транзакция подтверждена.")
+    finally:
+        # Возвращаемся к основному окну
         driver.switch_to.window(current_window)
-        time.sleep(random.randint(4, 6))
-    else:
-        print('Страница подтверждения транзакции')
-        # Если появляется только окно подтверждения, выполняем только шаги для подтверждения
-        all_windows = driver.window_handles
-        driver.switch_to.window(all_windows[-1])
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="app-content"]/div/div/div/div/div[3]/button[2]'))
-        ).click()
-        driver.switch_to.window(current_window)
-        time.sleep(random.randint(4, 6))
-    # Проверка клейма
-    print('Проверка клейма')
+
+    # Проверка выполнения клейма
+    print("Проверка клейма.")
     while True:
-        form_element = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, '//*[contains(@id, "radix-")]/button/span[1]'))
-        )
-        if form_element:
-            print("Клейм квеста Battle выполнен.")
-            break
+        try:
+            form_element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, '//*[contains(@id, "radix-")]/button/span[1]'))
+            )
+            if form_element:
+                print("Клейм выполнен.")
+                break
+        except TimeoutException:
+            print("Ожидание завершения клейма...")
 
     # while True:
     #     try:
